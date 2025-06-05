@@ -57,8 +57,11 @@ numeric_columns = df.select_dtypes(include=['float64', 'int64']).columns
 
 def normalize_data(data, method='zscore'):
     norm_df = data.copy()
+    
+    # Use only numeric columns that exist in the input DataFrame
+    data_numeric_columns = data.select_dtypes(include=['float64', 'int64']).columns
 
-    for col in numeric_columns:
+    for col in data_numeric_columns:
         if method == 'zscore':
             norm_df[col] = stats.zscore(data[col].values)
         elif method == 'log':
@@ -195,8 +198,8 @@ with tab2:
         st.subheader("Indicator Analysis")
         indicator = st.selectbox("Select an Indicator", df.columns[1:], key="main_indicator")
         st.write(f"**Statistics for {indicator}:**")
-        stats = df[indicator].describe().to_frame().T
-        st.dataframe(stats)
+        indicator_stats = df[indicator].describe().to_frame().T
+        st.dataframe(indicator_stats)
         show_top = st.checkbox("Show top 5 countries for this indicator", key="show_top")
         if show_top:
             st.write("**Top 5 countries:**")
@@ -848,12 +851,12 @@ with tab6:
                     col1, col2 = st.columns(2)
 
                     with col1:
-                        stats = geo_data[geo_indicator].describe()
-                        st.write(f"**Mean:** {stats['mean']:.2f}")
-                        st.write(f"**Median:** {stats['50%']:.2f}")
-                        st.write(f"**Std. Dev.:** {stats['std']:.2f}")
-                        st.write(f"**Min:** {stats['min']:.2f} ({geo_data.iloc[geo_data[geo_indicator].idxmin()][df.columns[0]]})")
-                        st.write(f"**Max:** {stats['max']:.2f} ({geo_data.iloc[geo_data[geo_indicator].idxmax()][df.columns[0]]})")
+                        geo_stats = geo_data[geo_indicator].describe()
+                        st.write(f"**Mean:** {geo_stats['mean']:.2f}")
+                        st.write(f"**Median:** {geo_stats['50%']:.2f}")
+                        st.write(f"**Std. Dev.:** {geo_stats['std']:.2f}")
+                        st.write(f"**Min:** {geo_stats['min']:.2f} ({geo_data.iloc[geo_data[geo_indicator].idxmin()][df.columns[0]]})")
+                        st.write(f"**Max:** {geo_stats['max']:.2f} ({geo_data.iloc[geo_data[geo_indicator].idxmax()][df.columns[0]]})")
 
                     with col2:
                         fig, ax = plt.subplots(figsize=(10, 6))
