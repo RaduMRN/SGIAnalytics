@@ -6,6 +6,9 @@ import numpy as np
 from scipy import stats
 from pandas.api.types import is_numeric_dtype
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from mpl_toolkits.mplot3d import Axes3D
 import factor_analyzer as fact
 from factor_analyzer.factor_analyzer import calculate_kmo, calculate_bartlett_sphericity
 import geopandas as gpd
@@ -163,7 +166,7 @@ st.sidebar.header("Top/Bottom Rankings")
 ranking_indicator = st.sidebar.selectbox("Select indicator for ranking", numeric_columns, key="ranking_indicator")
 ranking_count = st.sidebar.slider("Number of countries to show", 3, 15, 5, key="ranking_count")
 ranking_order = st.sidebar.radio("Order", ["Top (Highest)", "Bottom (Lowest)"], key="ranking_order")
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Dataset Overview", "Data Analysis", "Country Details", "Comparisons", "Factor Analysis", "Geographic Analysis"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dataset Overview", "Data Analysis", "Country Details", "Comparisons", "Factor Analysis", "Geographic Analysis", "Multiple Regression"])
 
 with tab1:
     col1, col2 = st.columns([3, 1])
@@ -584,15 +587,10 @@ with tab5:
     if len(fa_indicators) < 3:
         st.error(f"Not enough indicators in the {fa_category} category. Need at least 3 indicators for factor analysis.")
     else:
-
         fa_data = df[fa_indicators].copy()
         fa_data = fill_na(fa_data)
-
-
         x = fa_data.values
         n, m = x.shape
-
-
         if n <= 1:
             st.error("Not enough data for factor analysis.")
         else:
@@ -871,3 +869,185 @@ with tab6:
     except Exception as e:
         st.error(f"An error occurred in the Geographic Analysis section: {str(e)}")
         st.info("This section requires an internet connection to download geographic data. Please make sure you're connected to the internet.")
+
+with tab7:
+    st.header("Multiple Regression with 3D Visualization")
+
+
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.subheader("Variable Selection")
+
+
+        dependent_var = st.selectbox(
+            "Select Dependent Variable (Y)",
+            numeric_columns,
+            key="dependent_var"
+        )
+
+
+        available_vars = [col for col in numeric_columns if col != dependent_var]
+
+        independent_var1 = st.selectbox(
+            "Select First Independent Variable (X1)",
+            available_vars,
+            key="independent_var1"
+        )
+
+        available_vars2 = [col for col in available_vars if col != independent_var1]
+        independent_var2 = st.selectbox(
+            "Select Second Independent Variable (X2)",
+            available_vars2,
+            key="independent_var2"
+        )
+
+
+        normalize_regression = st.checkbox("Normalize data before regression", value=True)
+
+        if normalize_regression:
+            regression_norm_method = st.selectbox(
+                "Normalization Method",
+                ["Z-Score", "Min-Max", "Log"],
+                key="regression_norm_method"
+            )
+
+    with col2:
+        st.subheader("Regression Results")
+
+
+        regression_data = df[[dependent_var, independent_var1, independent_var2]].copy()
+        regression_data = fill_na(regression_data)
+
+        if normalize_regression:
+            if regression_norm_method == "Z-Score":
+                regression_data = normalize_data(regression_data, method='zscore')
+            elif regression_norm_method == "Min-Max":
+                regression_data = normalize_data(regression_data, method='minmax')
+            else:
+                regression_data = normalize_data(regression_data, method='log')
+
+
+        X = regression_data[[independent_var1, independent_var2]].values
+        y = regression_data[dependent_var].values
+
+
+        mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+        X = X[mask]
+        y = y[mask]
+        countries_filtered = df[df.columns[0]][mask].values
+
+        if len(X) > 3:
+
+            model = LinearRegression()
+            model.fit(X, y)
+
+            y_pred = model.predict(X)
+
+
+            r2 = r2_score(y, y_pred)
+            mse = mean_squared_error(y, y_pred)
+            mae = mean_absolute_error(y, y_pred)
+
+
+            st.write("**Model Performance:**")
+            st.write(f"R² Score: {r2:.3f}")
+            st.write(f"Mean Squared Error: {mse:.3f}")
+            st.write(f"Mean Absolute Error: {mae:.3f}")
+
+            st.write("**Model Coefficients:**")
+            st.write(f"Intercept: {model.intercept_:.3f}")
+            st.write(f"Coefficient for {independent_var1}: {model.coef_[0]:.3f}")
+            st.write(f"Coefficient for {independent_var2}: {model.coef_[1]:.3f}")
+
+
+            st.write("**Regression Equation:**")
+            st.latex(f"{dependent_var} = {model.intercept_:.3f} + {model.coef_[0]:.3f} \\times {independent_var1} + {model.coef_[1]:.3f} \\times {independent_var2}")
+
+
+    st.subheader("3D Visualization")
+
+    if len(X) > 3:
+
+        fig = plt.figure(figsize=(15, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+
+        scatter = ax.scatter(X[:, 0], X[:, 1], y, c=y, cmap='viridis', alpha=0.6, s=50)
+
+
+        x1_range = np.linspace(X[:, 0].min(), X[:, 0].max(), 20)
+        x2_range = np.linspace(X[:, 1].min(), X[:, 1].max(), 20)
+        x1_mesh, x2_mesh = np.meshgrid(x1_range, x2_range)
+
+
+        X_surf = np.column_stack([x1_mesh.ravel(), x2_mesh.ravel()])
+        y_surf = model.predict(X_surf).reshape(x1_mesh.shape)
+
+
+        surf = ax.plot_surface(x1_mesh, x2_mesh, y_surf, alpha=0.3, color='red')
+
+
+        ax.set_xlabel(independent_var1)
+        ax.set_ylabel(independent_var2)
+        ax.set_zlabel(dependent_var)
+        ax.set_title(f'3D Multiple Regression: {dependent_var} vs {independent_var1} & {independent_var2}')
+
+
+        plt.colorbar(scatter, ax=ax, shrink=0.5, aspect=10)
+
+        st.pyplot(fig)
+
+
+        st.subheader("Residual Analysis")
+
+        residuals = y - y_pred
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.scatter(y_pred, residuals, alpha=0.6)
+            ax.axhline(y=0, color='red', linestyle='--')
+            ax.set_xlabel('Predicted Values')
+            ax.set_ylabel('Residuals')
+            ax.set_title('Residuals vs Predicted Values')
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+
+        with col2:
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            stats.probplot(residuals, dist="norm", plot=ax)
+            ax.set_title('Q-Q Plot of Residuals')
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+
+
+        st.subheader("Countries Data and Predictions")
+
+        results_df = pd.DataFrame({
+            'Country': countries_filtered,
+            f'{independent_var1}': X[:, 0],
+            f'{independent_var2}': X[:, 1],
+            f'{dependent_var} (Actual)': y,
+            f'{dependent_var} (Predicted)': y_pred,
+            'Residual': residuals
+        })
+
+
+        results_df['Abs_Residual'] = np.abs(residuals)
+        results_df = results_df.sort_values('Abs_Residual', ascending=False)
+        results_df = results_df.drop('Abs_Residual', axis=1)
+
+        st.dataframe(results_df)
+
+
+        st.subheader("Countries with Largest Prediction Errors")
+        worst_predictions = results_df.head(5)
+        st.dataframe(worst_predictions[['Country', f'{dependent_var} (Actual)', f'{dependent_var} (Predicted)', 'Residual']])
+        
+    else:
+        st.error("Not enough data points for regression analysis. Need at least 4 countries with complete data.")
